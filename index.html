@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>プレミアム・サブスク管理 Hub & Sticker Arcade</title>
+    <style>
+        :root { 
+            --bg: #090d16; 
+            --card-bg: #111a2e;
+            --primary: #38bdf8; 
+            --danger: #f43f5e; 
+            --gray: #334155; 
+            --accent: #22c55e;
+            --text: #f8fafc;
+        }
+        
+        body { 
+            font-family: 'Helvetica Neue', Arial, sans-serif; 
+            background: var(--bg); 
+            margin: 0; padding: 0; color: var(--text); overflow-x: hidden; min-height: 100vh;
+            position: relative;
+        }
+        
+        .page-wrapper { display: flex; justify-content: flex-start; padding-left: calc((100vw - 1040px) / 2); position: relative; min-height: 100vh; width: 100vw; box-sizing: border-box; padding-top: 4vh; z-index: 1; }
+        .container { width: 100%; max-width: 460px; padding: 20px; z-index: 10; padding-bottom: 60px; box-sizing: border-box; flex-shrink: 0; }
+        
+        /* 起動アニメーション */
+        #splash-screen {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: radial-gradient(circle at center, #111827 0%, #030712 100%);
+            z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: opacity 0.6s ease, visibility 0.6s;
+        }
+        .splash-logo {
+            font-size: 24px; font-weight: 900; color: transparent;
+            background: linear-gradient(135deg, #a855f7, #f43f5e); -webkit-background-clip: text;
+            letter-spacing: 0.05em;
+        }
+
+        /* 貼り付けられたシール用のレイヤー（画面全体が対象） */
+        #placedStickersLayer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 999;
+        }
+        .placed-sticker {
+            position: absolute; font-size: 32px; transform: translate(-50%, -50%);
+            user-select: none; pointer-events: auto; cursor: pointer;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+            transition: transform 0.1s;
+        }
+        .placed-sticker:hover { transform: translate(-50%, -50%) scale(1.2); }
+
+        /* 右サイド：ガチャ ＆ シールリスト  */
+        .side-right-arcade { 
+            position: fixed; right: 4%; top: 6vh; width: 480px; height: 85vh; 
+            display: flex; flex-direction: column; gap: 15px; z-index: 1000;
+        }
+
+        .arcade-card {
+            background: #111827; border: 2px solid #1e293b; border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6); padding: 18px; display: flex; flex-direction: column;
+        }
+        .game-title { font-size: 14px; font-weight: bold; color: #fbbf24; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+        .owned-medals-badge { background: #1e293b; padding: 4px 10px; border-radius: 20px; color: #fbbf24; font-size: 13px; font-weight: 900; border: 1px solid #d97706; }
+
+        /* ガチャ演出画面 */
+        .gacha-display {
+            background: #090d16; height: 100px; border-radius: 14px; border: 1px solid #1e293b;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; margin-bottom: 10px;
+        }
+        #gachaResultEmoji { font-size: 42px; line-height: 1; margin-bottom: 4px; }
+        #gachaResultName { font-size: 12px; color: #94a3b8; font-weight: bold; }
+
+        /* シールリスト（コレクションボックス） */
+        .sticker-scroll-box {
+            height: 240px; overflow-y: auto; background: #090d16; border-radius: 14px;
+            padding: 10px; border: 1px solid #1e293b; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+        }
+        .sticker-item {
+            background: #1e293b; border-radius: 10px; padding: 6px; text-align: center;
+            position: relative; border: 2px solid transparent; cursor: pointer; transition: all 0.2s;
+        }
+        .sticker-item.selected { border-color: #ec4899; background: #2e1628; box-shadow: 0 0 10px rgba(236,72,153,0.4); }
+        .sticker-item.locked { opacity: 0.15; cursor: not-allowed; }
+        .sticker-emoji { font-size: 24px; display: block; }
+        .sticker-count {
+            position: absolute; top: -4px; right: -4px; background: #ec4899; color: white;
+            font-size: 9px; font-weight: bold; padding: 2px 6px; border-radius: 10px; border: 1px solid #111827;
+        }
+        .sticker-name { font-size: 9px; color: #64748b; display: block; margin-top: 2px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+
+        /* UIパネル（メイン管理画面） */
+        .nav-tabs { display: flex; background: #111827; padding: 6px; border-radius: 14px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.05); }
+        .tab-btn { flex: 1; padding: 12px; background: transparent; border: none; color: #475569; font-weight: bold; font-size: 14px; cursor: pointer; border-radius: 10px; transition: all 0.3s; }
+        .tab-btn.active { background: var(--card-bg); color: var(--primary); box-shadow: 0 4px 12px rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.05); }
+        .view-section { display: none; } .view-section.active { display: block; }
+
+        .clock-container { background: var(--card-bg); padding: 15px; border-radius: 16px; text-align: center; margin-bottom: 20px; font-weight: bold; border: 1px solid rgba(255,255,255,0.05); }
+        .clock-time { font-size: 18px; color: #34d399; font-family: monospace; }
+
+        .dashboard { background: linear-gradient(135deg, #1e293b, #090d16); padding: 25px 20px; border-radius: 20px; text-align: center; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.05); }
+        .total-amount { font-size: 38px; font-weight: 900; color: var(--primary); margin: 8px 0 0 0; }
+        
+        .form-group { background: var(--card-bg); padding: 20px; border-radius: 16px; margin-bottom: 20px; border: 1px solid rgba(255,255,255,0.05); }
+        .form-group h3 { margin: 0 0 15px 0; font-size: 14px; color: var(--primary); }
+        .form-group input, .form-group select { width: 100%; padding: 12px; margin: 5px 0 15px 0; box-sizing: border-box; background: #090d16; border: 1px solid #1e293b; border-radius: 10px; color: white; font-size: 14px; }
+        .btn { width: 100%; padding: 12px; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; color: white; font-size: 15px; }
+        .btn-primary { background: linear-gradient(135deg, #0ea5e9, #2563eb); }
+        .btn-gacha { background: linear-gradient(135deg, #fbbf24, #d97706); box-shadow: 0 4px 12px rgba(251,191,36,0.3); }
+        
+        .sub-list { display: flex; flex-direction: column; gap: 12px; }
+        .sub-card { background: var(--card-bg); padding: 16px; border-radius: 16px; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.02); }
+        .sub-card.canceled { opacity: 0.25; border-style: dashed; }
+        .sub-main-info { display: flex; align-items: center; gap: 15px; }
+        .sub-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: bold; color: white; flex-shrink: 0; }
+        .sub-info h3 { margin: 0 0 4px 0; font-size: 15px; color: #fff; }
+        
+        .action-btns { display: flex; flex-direction: column; gap: 6px; }
+        .btn-cancel, .btn-delete { padding: 5px 12px; font-size: 11px; border-radius: 6px; border: none; color: white; cursor: pointer; font-weight: bold; }
+        .btn-cancel { background: rgba(244,63,94,0.1); border: 1px solid var(--danger); color: var(--danger); }
+        .btn-delete { background: rgba(148,163,184,0.1); border: 1px solid #475569; color: #94a3b8; }
+
+        .calendar-timeline { display: flex; flex-direction: column; gap: 8px; background: var(--card-bg); padding: 20px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); }
+        .calendar-row { display: flex; align-items: center; padding: 8px; border-bottom: 1px solid #1e293b; }
+        .calendar-day-num { width: 45px; font-size: 14px; font-weight: bold; color: var(--primary); font-family: monospace; }
+
+        @media (max-width: 1020px) {
+            .page-wrapper { padding-left: 0; justify-content: center; }
+            .side-right-arcade { display: none; }
+        }
+    </style>
+</head>
+<body onclick="handleGlobalClick(event)">
+
+<div id="placedStickersLayer"></div>
+
+<div id="splash-screen">
+    <div class="splash-logo">PREMIUM SUBSCRIPTION</div>
+    <div style="color: #475569; font-size: 13px; margin-top: 10px;">Loading Sticker Custom Stage...</div>
+</div>
+
+<div class="page-wrapper">
+    <div class="container">
+        <div class="clock-container">
+            <div class="clock-time" id="jstClock">----年--月--日 (水) --:--:--</div>
+        </div>
+
+        <div class="nav-tabs">
+            <button class="tab-btn active" onclick="switchView('desk')">🗂️ 管理デスク</button>
+            <button class="tab-btn" onclick="switchView('calendar')">📅 カレンダー表示</button>
+        </div>
+
+        <div id="view-desk" class="view-section active">
+            <div class="dashboard">
+                <h2 style="margin:0; font-size:12px; color:#64748b;">現在の月額合計コスト</h2>
+                <div class="total-amount" id="totalMonthlyCost">¥0</div>
+            </div>
+
+            <div class="form-group">
+                <h3>新しいサブスクを登録</h3>
+                <input type="text" id="subName" placeholder="アプリ名（例: Netflix）">
+                <input type="number" id="subPrice" placeholder="金額（例: 1490）">
+                <select id="subCycle">
+                    <option value="monthly">月額</option>
+                    <option value="yearly">年額</option>
+                </select>
+                <input type="date" id="subStartDate">
+                <button class="btn btn-primary" onclick="handleRegister()">登録する</button>
+            </div>
+
+            <h3 style="font-size: 13px; color: #64748b; margin-bottom: 10px;">登録中のサブスク一覧</h3>
+            <div class="sub-list" id="subList"></div>
+        </div>
+
+        <div id="view-calendar" class="view-section">
+            <h3 style="font-size: 14px; color: var(--primary); margin-bottom: 12px;">毎月の更新スケジュール</h3>
+            <div class="calendar-timeline" id="calendarTimeline"></div>
+        </div>
+    </div>
+
+    <div class="side-right-arcade" onclick="event.stopPropagation()">
+        <div class="arcade-card">
+            <div class="game-title">
+                <span>🎰 節約ご褒美アニマルガチャ</span>
+                <span class="owned-medals-badge">🪙 メダル: <strong id="ownedMedalsLabel">0</strong> 枚</span>
+            </div>
+            
+            <div class="gacha-display" id="gachaDisplay">
+                <div id="gachaResultEmoji">❓</div>
+                <div id="gachaResultName">何が出るかな？</div>
+            </div>
+            
+            <button class="btn btn-gacha" onclick="playGacha()">🪙 メダル1枚でガチャを回す</button>
+        </div>
+
+        <div class="arcade-card">
+            <div class="game-title">
+                <span>🎒 所持シールリスト (全32種)</span>
+                <span id="stickerModeLabel" style="font-size:11px; color:#ec4899; font-weight:bold;">選択中: なし</span>
+            </div>
+            
+            <div class="sticker-scroll-box" id="stickerScrollBox"></div>
+            
+            <p style="margin: 8px 0 0 0; font-size: 11px; color: #64748b; text-align: center;">
+                ※貼りたいシールを選んでから、画面の好きな場所をクリックしてデコレーション！<br>
+                （貼ったシールをダブルクリックすると剥がせます）
+            </p>
+        </div>
+    </div>
+</div>
+
+<script>
+    const STICKER_STORAGE_KEY = 'subs_sticker_gacha_v4';
+
+    // 🌟 ガチャの全32種類マスターデータ定義
+    const gachaPool = [
+        // 陸上動物 (15種)
+        { id: 'm1', emoji: '🦁', name: 'ライオン', type: 'land' }, { id: 'm2', emoji: '🐯', name: 'トラ', type: 'land' },
+        { id: 'm3', emoji: '🐻', name: 'クマ', type: 'land' }, { id: 'm4', emoji: '🦊', name: 'キツネ', type: 'land' },
+        { id: 'm5', emoji: '🐱', name: 'ネコ', type: 'land' }, { id: 'm6', emoji: '🐶', name: 'イヌ', type: 'land' },
+        { id: 'm7', emoji: '🐰', name: 'ウサギ', type: 'land' }, { id: 'm8', emoji: '🐼', name: 'パンダ', type: 'land' },
+        { id: 'm9', emoji: 'Koala', emoji: '🐨', name: 'コアラ', type: 'land' }, { id: 'm10', emoji: '🐒', name: 'サル', type: 'land' },
+        { id: 'm11', emoji: '🐘', name: 'ゾウ', type: 'land' }, { id: 'm12', emoji: '🦒', name: 'キリン', type: 'land' },
+        { id: 'm13', emoji: '🐴', name: 'ウマ', type: 'land' }, { id: 'm14', emoji: '🐑', name: 'ヒツジ', type: 'land' },
+        { id: 'm15', emoji: '🦌', name: 'シカ', type: 'land' },
+        // 海の生き物 (15種)
+        { id: 'sea1', emoji: '🐬', name: 'イルカ', type: 'sea' }, { id: 'sea2', emoji: '🐳', name: 'クジラ', type: 'sea' },
+        { id: 'sea3', emoji: '🐙', name: 'タコ', type: 'sea' }, { id: 'sea4', emoji: '🦑', name: 'イカ', type: 'sea' },
+        { id: 'sea5', emoji: '🦀', name: 'カニ', type: 'sea' }, { id: 'sea6', emoji: '🦐', name: 'エビ', type: 'sea' },
+        { id: 'sea7', emoji: '🐠', name: '熱帯魚', type: 'sea' }, { id: 'sea8', emoji: '🐡', name: 'フグ', type: 'sea' },
+        { id: 'sea9', emoji: '🐢', name: 'ウミガメ', type: 'sea' }, { id: 'sea10', emoji: '🐧', name: 'ペンギン', type: 'sea' },
+        { id: 'sea11', emoji: '🦭', name: 'アザラシ', type: 'sea' }, { id: 'sea12', emoji: '🦦', name: 'ラッコ', type: 'sea' },
+        { id: 'sea13', emoji: '🐋', name: 'ナガスクジラ', type: 'sea' }, { id: 'sea14', emoji: '🦈', name: 'サメ', type: 'sea' },
+        { id: 'sea15', emoji: '🪼', name: 'クラゲ', type: 'sea' },
+        // シークレット (2種)
+        { id: 'secret1', emoji: '💖', name: 'ハートマーク', type: 'secret' },
+        { id: 'secret2', emoji: '⭐', name: 'ホシマーク', type: 'secret' }
+    ];
+
+    // ローカルストレージ用データ構造
+    let appState = JSON.parse(localStorage.getItem(STICKER_STORAGE_KEY)) || {
+        ownedMedals: 0,
+        inventory: {},     // 各シールのIDごとの所持枚数（ダブり含む蓄積）
+        placedStickers: [] // 画面に配置したシールの座標情報リスト { id, emoji, x, y }
+    };
+
+    let activeSelectedStickerId = null; // 現在「貼る」ために選択しているシールのID
+
+    function saveState() {
+        localStorage.setItem(STICKER_STORAGE_KEY, JSON.stringify(appState));
+        document.getElementById('ownedMedalsLabel').innerText = appState.ownedMedals;
+        renderStickerInventory();
+        renderPlacedStickers();
+    }
+
+    // 🎒 所持シールリストのUI描画
+    function renderStickerInventory() {
+        const box = document.getElementById('stickerScrollBox');
+        box.innerHTML = '';
+
+        gachaPool.forEach(item => {
+            const count = appState.inventory[item.id] || 0;
+            const itemEl = document.createElement('div');
+            itemEl.className = `sticker-item ${count === 0 ? 'locked' : ''} ${activeSelectedStickerId === item.id ? 'selected' : ''}`;
+            
+            // 所持枚数バッジ（ダブり累積表示）
+            if (count > 0) {
+                const badge = document.createElement('div');
+                badge.className = 'sticker-count';
+                badge.innerText = `${count}枚`;
+                itemEl.appendChild(badge);
+            }
+
+            itemEl.innerHTML += `
+                <span class="sticker-emoji">${count > 0 ? item.emoji : '❓'}</span>
+                <span class="sticker-name">${count > 0 ? item.name : '未獲得'}</span>
+            `;
+
+            // クリック時にシールを選択
+            if (count > 0) {
+                itemEl.onclick = () => {
+                    if (activeSelectedStickerId === item.id) {
+                        activeSelectedStickerId = null; // トグル解除
+                        document.getElementById('stickerModeLabel').innerText = `選択中: なし`;
+                    } else {
+                        activeSelectedStickerId = item.id;
+                        document.getElementById('stickerModeLabel').innerText = `選択中: ${item.emoji} (貼るモード)`;
+                    }
+                    renderStickerInventory();
+                };
+            }
+            box.appendChild(itemEl);
+        });
+    }
+
+    // 🎰 ガチャを回すメインコアロジック
+    function playGacha() {
+        if (appState.ownedMedals <= 0) {
+            alert("メダルがありません！固定費を「解約」して、浮いた節約金からメダルを獲得しましょう！");
+            return;
+        }
+
+        appState.ownedMedals--;
+
+        // ランダムに1つ抽選
+        const randomIndex = Math.floor(Math.random() * gachaPool.length);
+        const resultItem = gachaPool[randomIndex];
+
+        // インベントリに加算（ダブりもそのまま蓄積）
+        appState.inventory[resultItem.id] = (appState.inventory[resultItem.id] || 0) + 1;
+
+        // ガチャ画面にアニメーション風に表示
+        const emojiDisplay = document.getElementById('gachaResultEmoji');
+        const nameDisplay = document.getElementById('gachaResultName');
+        
+        emojiDisplay.innerText = '✨';
+        nameDisplay.innerText = '抽選中...';
+
+        setTimeout(() => {
+            emojiDisplay.innerText = resultItem.emoji;
+            nameDisplay.innerText = `獲得: ${resultItem.name} ${resultItem.type === 'secret' ? '⚠️シークレット！' : ''}`;
+            saveState();
+        }, 400);
+    }
+
+    // 📌 画面のどこでもクリックされたときにシールを貼る処理
+    function handleGlobalClick(event) {
+        if (!activeSelectedStickerId) return;
+
+        // 残り枚数をチェック
+        const currentCount = appState.inventory[activeSelectedStickerId] || 0;
+        if (currentCount <= 0) {
+            activeSelectedStickerId = null;
+            document.getElementById('stickerModeLabel').innerText = `選択中: なし`;
+            saveState();
+            return;
+        }
+
+        // 選択されているシールのマスターデータを取得
+        const targetSticker = gachaPool.find(p => p.id === activeSelectedStickerId);
+        if (!targetSticker) return;
+
+        // 1枚消費して配置座標を保存
+        appState.inventory[activeSelectedStickerId]--;
+        
+        // クリックされた絶対座標（X, Y）を記録
+        appState.placedStickers.push({
+            id: Date.now().toString(),
+            emoji: targetSticker.emoji,
+            x: event.pageX,
+            y: event.pageY
+        });
+
+        // 枚数がゼロになったら選択解除
+        if (appState.inventory[activeSelectedStickerId] === 0) {
+            activeSelectedStickerId = null;
+            document.getElementById('stickerModeLabel').innerText = `選択中: なし`;
+        } else {
+            document.getElementById('stickerModeLabel').innerText = `選択中: ${targetSticker.emoji} (${appState.inventory[activeSelectedStickerId]}枚)`;
+        }
+
+        saveState();
+    }
+
+    // 配置されたシールレイヤーのレンダリング
+    function renderPlacedStickers() {
+        const layer = document.getElementById('placedStickersLayer');
+        layer.innerHTML = '';
+
+        appState.placedStickers.forEach(sticker => {
+            const stickerEl = document.createElement('div');
+            stickerEl.className = 'placed-sticker';
+            stickerEl.innerText = sticker.emoji;
+            stickerEl.style.left = `${sticker.x}px`;
+            stickerEl.style.top = `${sticker.y}px`;
+            
+            // ダブルクリックでシールを回収（インベントリに戻す）
+            stickerEl.ondblclick = (e) => {
+                e.stopPropagation(); // グリック発火防止
+                // インベントリに戻すために逆引き
+                const matchedMaster = gachaPool.find(p => p.emoji === sticker.emoji);
+                if (matchedMaster) {
+                    appState.inventory[matchedMaster.id] = (appState.inventory[matchedMaster.id] || 0) + 1;
+                }
+                // リストから削除
+                appState.placedStickers = appState.placedStickers.filter(s => s.id !== sticker.id);
+                saveState();
+            };
+            layer.appendChild(stickerEl);
+        });
+    }
+
+    window.addEventListener('load', () => {
+        setTimeout(() => {
+            document.getElementById('splash-screen').style.opacity = '0';
+            document.getElementById('splash-screen').style.visibility = 'hidden';
+            saveState();
+        }, 1200);
+    });
+
+    function switchView(viewName) {
+        document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+        document.getElementById(`view-${viewName}`).classList.add('active');
+        event.target.classList.add('active');
+        if (viewName === 'calendar') renderCalendar();
+    }
+
+    function getJSTDate() {
+        return new Date(new Date().toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }));
+    }
+
+    function generateIconStyles(name) {
+        const lowerName = name.toLowerCase();
+        let bgColor = '#6366f1';
+        if (lowerName.includes('netf')) bgColor = '#e50914';
+        else if (lowerName.includes('spot')) bgColor = '#1ed760';
+        else if (lowerName.includes('amaz') || lowerName.includes('prime')) bgColor = '#ff9900';
+        else if (lowerName.includes('yout') || lowerName.includes('goog')) bgColor = '#ff0000';
+        else {
+            const colors = ['#ec4899', '#8b5cf6', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b'];
+            let sum = 0; for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
+            bgColor = colors[sum % colors.length];
+        }
+        return { bgColor, displayChar: name.substring(0, 2) };
+    }
+
+    function updateClock() {
+        const now = getJSTDate();
+        const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+        document.getElementById('jstClock').innerText = `${now.getFullYear()}年${String(now.getMonth() + 1).padStart(2, '0')}月${String(now.getDate()).padStart(2, '0')}日 (${dayNames[now.getDay()]}) ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+        updateUI();
+    }
+
+    class SubscriptionManager {
+        constructor() { this.subscriptions = JSON.parse(localStorage.getItem('subs')) || []; }
+        save() { localStorage.setItem('subs', JSON.stringify(this.subscriptions)); }
+        add(name, price, cycle, startDate) {
+            this.subscriptions.push({ id: Date.now().toString(), name, price: parseInt(price), cycle, startDate, endDate: null });
+            this.save();
+        }
+        cancel(id) {
+            const sub = this.subscriptions.find(s => s.id === id);
+            if (sub) {
+                const now = getJSTDate();
+                sub.endDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                this.save();
+
+                // 🏅 節約のご褒美：解約による浮いた固定費の累積から1000円ごとに1枚メダル蓄積（最低保証3枚）
+                const { totalPaid } = calculateMetrics(sub);
+                const earned = Math.max(3, Math.floor(totalPaid / 1000));
+                appState.ownedMedals += earned;
+                saveState();
+            }
+        }
+        delete(id) { this.subscriptions = this.subscriptions.filter(sub => sub.id !== id); this.save(); }
+        calculateTotalMonthlyCost() {
+            return this.subscriptions.reduce((total, sub) => sub.endDate ? total : total + (sub.cycle === 'monthly' ? sub.price : Math.round(sub.price / 12)), 0);
+        }
+    }
+
+    const manager = new SubscriptionManager();
+
+    function calculateMetrics(sub) {
+        const start = new Date(sub.startDate); start.setHours(0,0,0,0);
+        const end = sub.endDate ? new Date(sub.endDate) : getJSTDate(); end.setHours(0,0,0,0);
+        const days = Math.max(1, Math.floor((end - start) / (1000 * 60 * 60 * 24)) + 1);
+        let totalPaid = sub.price;
+        if (sub.cycle === 'monthly') {
+            totalPaid = Math.max(1, ((end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth())) + 1) * sub.price;
+        } else {
+            totalPaid = Math.max(1, (end.getFullYear() - start.getFullYear()) + 1) * sub.price;
+        }
+        return { days, totalPaid };
+    }
+
+    function updateUI() {
+        const totalCost = manager.calculateTotalMonthlyCost();
+        document.getElementById('totalMonthlyCost').innerText = `¥${totalCost.toLocaleString()}`;
+        
+        const listEl = document.getElementById('subList');
+        if(!listEl) return; listEl.innerHTML = '';
+
+        manager.subscriptions.forEach(sub => {
+            const { days, totalPaid } = calculateMetrics(sub);
+            const isCanceled = sub.endDate !== null;
+            const iconData = generateIconStyles(sub.name);
+
+            const card = document.createElement('div');
+            card.className = `sub-card ${isCanceled ? 'canceled' : ''}`;
+            card.innerHTML = `
+                <div class="sub-main-info">
+                    <div class="sub-icon" style="background: ${iconData.bgColor};">${iconData.displayChar}</div>
+                    <div class="sub-info">
+                        <h3>${sub.name}</h3>
+                        <p>価格: ¥${sub.price.toLocaleString()} (${sub.cycle === 'monthly' ? '月額' : '年額'})</p>
+                        <p>経過: <span>${days}日目</span> ${isCanceled ? '(解約済)' : ''}</p>
+                        <p style="color: #34d399; font-size:11px;">累計支出: ¥${totalPaid.toLocaleString()}</p>
+                    </div>
+                </div>
+                <div class="action-btns">
+                    ${!isCanceled ? `<button class="btn-cancel" onclick="handleCancel('${sub.id}')">解約</button>` : ''}
+                    <button class="btn-delete" onclick="handleDelete('${sub.id}')">削除</button>
+                </div>
+            `;
+            listEl.appendChild(card);
+        });
+    }
+
+    function renderCalendar() {
+        const timelineEl = document.getElementById('calendarTimeline');
+        timelineEl.innerHTML = '';
+        for (let day = 1; day <= 31; day++) {
+            const row = document.createElement('div'); row.className = 'calendar-row';
+            const dayNum = document.createElement('div'); dayNum.className = 'calendar-day-num'; dayNum.innerText = `${String(day).padStart(2, '0')}日`;
+            row.appendChild(dayNum);
+            const eventsContainer = document.createElement('div'); eventsContainer.className = 'calendar-events';
+
+            const matchedSubs = manager.subscriptions.filter(sub => !sub.endDate && new Date(sub.startDate).getDate() === day);
+            if (matchedSubs.length > 0) {
+                matchedSubs.forEach(sub => {
+                    const iconData = generateIconStyles(sub.name);
+                    const tag = document.createElement('div'); tag.className = 'calendar-tag'; tag.style.backgroundColor = iconData.bgColor; tag.innerText = `${sub.name}`;
+                    eventsContainer.appendChild(tag);
+                });
+            } else {
+                const noEvent = document.createElement('span'); noEvent.style.color='#1e293b'; noEvent.innerText = '-'; eventsContainer.appendChild(noEvent);
+            }
+            row.appendChild(eventsContainer); timelineEl.appendChild(row);
+        }
+    }
+
+    function handleRegister() {
+        const name = document.getElementById('subName').value;
+        const price = document.getElementById('subPrice').value;
+        const cycle = document.getElementById('subCycle').value;
+        const startDate = document.getElementById('subStartDate').value;
+        if (!name || !price || !startDate) return alert('項目を入力してください');
+        manager.add(name, price, cycle, startDate); updateUI();
+        document.getElementById('subName').value = ''; document.getElementById('subPrice').value = '';
+    }
+
+    function handleCancel(id) { if (confirm('解約済みにしますか？')) { manager.cancel(id); updateUI(); } }
+    function handleDelete(id) { if (confirm('完全に削除しますか？')) { manager.delete(id); updateUI(); } }
+
+    const todayJST = getJSTDate();
+    document.getElementById('subStartDate').value = `${todayJST.getFullYear()}-${String(todayJST.getMonth() + 1).padStart(2, '0')}-${String(todayJST.getDate()).padStart(2, '0')}`;
+    
+    setInterval(updateClock, 1000);
+    updateClock(); 
+</script>
+</body>
+</html>
